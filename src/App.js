@@ -1,24 +1,29 @@
-import logo from './logo.svg';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { AuthProvider } from './context/AuthContext';
+import HomePage from './pages/HomePage';
+import LoginPage from './pages/LoginPage';
+import HostCreateAuctionPage from './pages/HostCreateAuctionPage';
+import HostAuctionPage from './pages/HostAuctionPage';
+import BidderJoinPage from './pages/BidderJoinPage';
+import AuctionRoomPage from './pages/AuctionRoomPage';
 import './App.css';
 
 function App() {
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/home" element={<HomePage />} />
+          <Route path="/host/create" element={<HostCreateAuctionPage />} />
+          <Route path="/host/auction/:auctionId" element={<HostAuctionPage />} />
+          <Route path="/bid/join" element={<BidderJoinPage />} />
+          <Route path="/auction/:auctionId" element={<AuctionRoomPage />} />
+          <Route path="*" element={<Navigate to="/home" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
   );
 }
 
