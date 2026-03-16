@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
 import { formatCurrency, getAuctionById, getWinner, updateAuction } from '../utils/auctionStorage';
 import { useAuth } from '../context/AuthContext';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 function formatTimeRemaining(ms) {
   if (ms <= 0) return '00:00';
@@ -13,6 +14,7 @@ function formatTimeRemaining(ms) {
 }
 
 export default function HostAuctionPage() {
+  usePageTitle('Host - Auction Dashboard');
   const { auctionId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -128,7 +130,8 @@ export default function HostAuctionPage() {
         </div>
       </header>
 
-      <section className="card auction-summary">
+      <div className="auction-layout-container">
+        <section className="card auction-summary">
         <h2>Auction details</h2>
         <div className="auction-meta">
           <div>
@@ -233,6 +236,7 @@ export default function HostAuctionPage() {
           </div>
         )}
       </section>
+      </div>
     </main>
   );
 }

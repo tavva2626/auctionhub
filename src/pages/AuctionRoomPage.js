@@ -6,9 +6,12 @@ import {
   getAuctionById,
   getWinner,
   updateAuction,
+  dropBid,
 } from '../utils/auctionStorage';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 export default function AuctionRoomPage() {
+  usePageTitle('Bidder - Auction Room');
   const { auctionId } = useParams();
   const navigate = useNavigate();
   const [auction, setAuction] = useState(() => getAuctionById(auctionId));
@@ -96,9 +99,19 @@ export default function AuctionRoomPage() {
 
   const winner = getWinner(auction);
 
+  // Check if current bidder is dropped
+  const currentBidderInfo = auction.bidders?.find((b) => b.id === bidder.bidderId);
+  const isDropped = currentBidderInfo?.isDropped || false;
+
   const handleBid = (event) => {
     event.preventDefault();
     setError('');
+
+    if (isDropped) {
+      setError('You cannot bid any more because you dropped from this auction.');
+      return;
+    }
+
     const amount = Number(bidAmount);
     if (!amount || amount <= (auction.basePrice || 0)) {
       setError('Bid must be greater than the base price.');
@@ -111,6 +124,12 @@ export default function AuctionRoomPage() {
 
     addBid(auction.id, bidder.bidderId, amount);
     setBidAmount('');
+  };
+
+  const handleDropBid = () => {
+    if (window.confirm('Are you sure you want to drop out of this auction?')) {
+      dropBid(auction.id, bidder.bidderId);
+    }
   };
 
   const handleLeave = () => {
@@ -133,16 +152,12 @@ export default function AuctionRoomPage() {
         </button>
       </header>
 
-      <section className="card auction-info">
+      <div className="auction-layout-container">
+        <section className="card auction-info">
         <h2>Auction info</h2>
         <p>
           <strong>Status:</strong> {auction.status}
         </p>
-        {auction.status === 'started' && (
-          <p>
-            <strong>Time left:</strong> {Math.floor(timeLeft / 1000)}s
-          </p>
-        )}
         <p>
           <strong>Current highest bid:</strong> {formatCurrency(highestBid)}
         </p>
@@ -154,6 +169,21 @@ export default function AuctionRoomPage() {
 
         {!canBid && auction.status === 'waiting' && (
           <p className="hint">Waiting for the host to start the timer...</p>
+        )}
+
+        {auction.status === 'started' && (
+          <div style={{ marginBottom: '1.5rem', padding: '2rem', textAlign: 'center', background: 'rgba(59, 130, 246, 0.08)', borderRadius: '12px' }}>
+            <p style={{ margin: '0 0 0.5rem', color: 'var(--muted)', fontSize: '0.9rem' }}>Time Remaining</p>
+            <div style={{
+              fontSize: '4rem',
+              fontWeight: 700,
+              color: '#3b82f6',
+              fontFamily: 'monospace',
+              letterSpacing: '0.1em'
+            }}>
+              {Math.floor(timeLeft / 1000)}s
+            </div>
+          </div>
         )}
 
         {auction.status === 'ended' && (
@@ -170,22 +200,52 @@ export default function AuctionRoomPage() {
           </div>
         )}
 
-        {canBid && (
+        {isDropped && (
+          <div className="card" style={{
+            padding: '1rem',
+            background: 'rgba(239, 68, 68, 0.1)',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+            borderRadius: '8px'
+          }}>
+            <p style={{ margin: 0, fontWeight: 600, color: '#dc2626' }}>
+              🚫 You have dropped from this auction and cannot bid anymore.
+            </p>
+          </div>
+        )}
+
+        {canBid && !isDropped && (
           <form className="bid-form" onSubmit={handleBid}>
             <label>
               Your bid (USD)
               <input
                 type="number"
-                step="1"
                 value={bidAmount}
                 onChange={(e) => setBidAmount(e.target.value)}
-                placeholder="Enter an amount"
+                placeholder={`Minimum: $${Math.floor(highestBid) + 1}`}
               />
             </label>
             {error && <div className="form-error">{error}</div>}
-            <button type="submit" className="primary">
-              Place bid
-            </button>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              <button type="submit" className="primary">
+                Place bid
+              </button>
+              <button
+                type="button"
+                onClick={handleDropBid}
+                style={{
+                  background: '#ef4444',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '0.75rem 1rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontSize: '1rem'
+                }}
+              >
+                🚫 Drop Out
+              </button>
+            </div>
           </form>
         )}
       </section>
@@ -206,8 +266,8 @@ export default function AuctionRoomPage() {
                 .slice()
                 .sort((a, b) => (b.lastBid || 0) - (a.lastBid || 0))
                 .map((b, idx) => (
-                <tr key={b.id} className={b.id === bidder.bidderId ? 'current-bidder' : ''}>
-                  <td>#{idx + 1} - {b.name} {b.id === bidder.bidderId && <span className="badge">(You)</span>}</td>
+                <tr key={b.id} className={b.id === bidder.bidderId ? 'current-bidder' : ''} style={{ opacity: b.isDropped ? 0.6 : 1 }}>
+                  <td>#{idx + 1} - {b.name} {b.id === bidder.bidderId && <span className="badge">(You)</span>} {b.isDropped && <span className="badge" style={{ background: '#ef4444' }}>Dropped</span>}</td>
                   <td className="bid-amount">{formatCurrency(b.lastBid || 0)}</td>
                   <td className="bid-count">{(b.bids || []).length}</td>
                   </tr>
@@ -218,6 +278,7 @@ export default function AuctionRoomPage() {
           <p>No bids yet.</p>
         )}
       </section>
+      </div>
     </main>
   );
 }
