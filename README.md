@@ -1,6 +1,10 @@
-# Getting Started with Create React App
+# AuctionHub - Professional Web Application
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+🚀 **Live Web Link:** [https://auctionwebpage.vercel.app](https://auctionwebpage.vercel.app)
+
+This project is a professional-grade, real-time auction platform built with React and Firebase. It features multi-item support, real-time bidder status tracking, and automated audit log exports.
+
+## Getting Started with Create React App
 
 ## Available Scripts
 
