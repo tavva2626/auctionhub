@@ -1,0 +1,4 @@
+{
+  "buildCommand": "echo Skipped cloud build",
+  "outputDirectory": "build"
+}

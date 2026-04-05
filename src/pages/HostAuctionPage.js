@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
-import { formatCurrency, getAuctionById, getWinner, updateAuction } from '../utils/auctionStorage';
+import { formatCurrency, getWinner } from '../utils/auctionStorage';
+import { listenAuctionRemote, updateAuctionRemote, getAuctionBidHistory } from '../utils/firestoreAuctions';
 import { useAuth } from '../context/AuthContext';
 import { usePageTitle } from '../hooks/usePageTitle';
+import ModalDialog from '../components/ModalDialog';
+import NetworkAccessInfo from '../components/NetworkAccessInfo';
+import { getNetworkURL } from '../utils/networkURL';
 
 function formatTimeRemaining(ms) {
   if (ms <= 0) return '00:00';
@@ -18,8 +22,12 @@ export default function HostAuctionPage() {
   const { auctionId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [auction, setAuction] = useState(() => getAuctionById(auctionId));
+  const [auction, setAuction] = useState(null);
   const [now, setNow] = useState(Date.now());
+  const [showStartModal, setShowStartModal] = useState(false);
+  const [showClearModal, setShowClearModal] = useState(false);
+  const [copyFeedback, setCopyFeedback] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   const isHost = user?.username === auction?.createdBy;
 
@@ -30,6 +38,13 @@ export default function HostAuctionPage() {
   }, [user, navigate]);
 
   useEffect(() => {
+    const unsub = listenAuctionRemote(auctionId, (data) => {
+      setAuction(data);
+    });
+    return () => unsub && unsub();
+  }, [auctionId]);
+
+  useEffect(() => {
     const interval = setInterval(() => {
       setNow(Date.now());
     }, 1000);
@@ -37,18 +52,9 @@ export default function HostAuctionPage() {
   }, []);
 
   useEffect(() => {
-    // Keep in sync with local storage in case someone else updated it.
-    const fresh = getAuctionById(auctionId);
-    if (fresh) {
-      setAuction(fresh);
-    }
-  }, [now, auctionId]);
-
-  useEffect(() => {
     if (!auction) return;
     if (auction.status === 'started' && auction.timerEnd && now >= auction.timerEnd) {
-      const updated = updateAuction(auction.id, { status: 'ended' });
-      setAuction(updated);
+      updateAuctionRemote(auction.id, { status: 'ended' });
     }
   }, [auction, now]);
 
@@ -80,37 +86,97 @@ export default function HostAuctionPage() {
     );
   }
 
-  const shareLink = `${window.location.origin}/bid/join?auctionId=${auction.id}&password=${encodeURIComponent(
+  const shareLink = getNetworkURL(`/bid/join?auctionId=${auction.id}&password=${encodeURIComponent(
     auction.password
-  )}`;
+  )}`);
 
   const timeRemaining = auction.timerEnd ? Math.max(0, auction.timerEnd - now) : 0;
 
   const winner = getWinner(auction);
 
   const handleStart = () => {
-    const seconds = Number(
-      window.prompt('How long should the auction run? (seconds)', '60') || '60'
-    );
-    if (!seconds || seconds <= 0) return;
-    const timerEnd = Date.now() + seconds * 1000;
-    const updated = updateAuction(auction.id, {
+    setShowStartModal(true);
+  };
+
+  const handleStartConfirm = async (seconds) => {
+    const numSeconds = Number(seconds) || 60;
+    if (!numSeconds || numSeconds <= 0) {
+      setShowStartModal(false);
+      return;
+    }
+    const timerEnd = Date.now() + numSeconds * 1000;
+    await updateAuctionRemote(auction.id, {
       status: 'started',
       timerEnd,
     });
-    setAuction(updated);
+    setShowStartModal(false);
   };
 
-  const handleEnd = () => {
-    const updated = updateAuction(auction.id, { status: 'ended' });
-    setAuction(updated);
+  const handleEnd = async () => {
+    await updateAuctionRemote(auction.id, { status: 'ended' });
   };
 
   const handleClear = () => {
-    if (window.confirm('Clear all bidders and bids?')) {
-      const updated = updateAuction(auction.id, { bidders: [] });
-      setAuction(updated);
+    setShowClearModal(true);
+  };
+
+  const handleClearConfirm = async (confirmed) => {
+    setShowClearModal(false);
+    if (confirmed) {
+      await updateAuctionRemote(auction.id, { bidders: [] });
     }
+  };
+
+  const handleExportData = async () => {
+    if (!auction || isExporting) return;
+    setIsExporting(true);
+    try {
+      const history = await getAuctionBidHistory(auction.id);
+      
+      const headers = ["Timestamp", "Event Type", "Bidder Name", "Amount", "Bidder ID"];
+      const rows = history.map(event => {
+        const time = event.time?.seconds 
+          ? new Date(event.time.seconds * 1000).toLocaleString() 
+          : new Date().toLocaleString();
+        
+        return [
+          `"${time}"`,
+          `"${(event.type || 'bid').toUpperCase()}"`,
+          `"${(event.bidderName || 'Unknown').replace(/"/g, '""')}"`,
+          event.amount || 0,
+          `"${event.bidderId || ''}"`
+        ];
+      });
+
+      const csvContent = [
+        headers.join(","),
+        ...rows.map(row => row.join(","))
+      ].join("\n");
+
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `auction-${auction.id}-audit-log.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert("Failed to export data: " + err.message);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleCopyLink = () => {
+    const shareLink = getNetworkURL(`/bid/join?auctionId=${auction.id}&password=${encodeURIComponent(auction.password)}`);
+    navigator.clipboard.writeText(shareLink).then(() => {
+      setCopyFeedback(true);
+      setTimeout(() => setCopyFeedback(false), 2000);
+    }).catch(() => {
+      alert('Failed to copy link');
+    });
   };
 
   return (
@@ -153,32 +219,34 @@ export default function HostAuctionPage() {
         <h3>Description</h3>
         <p>{auction.description || 'No description provided.'}</p>
 
-        {auction.history && (
-          <>
-            <h3>History</h3>
-            <p>{auction.history}</p>
-          </>
-        )}
-
-        {auction.images?.length > 0 && (
-          <div className="image-grid">
-            {auction.images.map((src) => (
-              <img key={src} src={src} alt={auction.title} />
-            ))}
-          </div>
-        )}
-
         <div className="share-section">
           <h3>Share this auction</h3>
           <p>Share this link or show the QR code to bidders.</p>
           <div className="share-box">
             <input readOnly value={shareLink} />
+            <button
+              onClick={handleCopyLink}
+              title="Copy link to clipboard"
+              style={{
+                background: copyFeedback ? '#10b981' : 'var(--primary)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '0.75rem 1rem',
+                cursor: 'pointer',
+                fontWeight: 600,
+                transition: 'all 200ms ease',
+                fontSize: '0.9rem',
+              }}
+            >
+              {copyFeedback ? '✓ Copied!' : '📋 Copy'}
+            </button>
             <QRCodeCanvas value={shareLink} size={148} />
           </div>
         </div>
 
         <div className="auction-actions">
-          {auction.status === 'waiting' && (
+          {auction.status === 'waiting' && !auction.timerEnd && (
             <button className="primary" onClick={handleStart}>
               Start auction timer
             </button>
@@ -186,6 +254,16 @@ export default function HostAuctionPage() {
           {auction.status === 'started' && (
             <button className="primary" onClick={handleEnd}>
               End auction now
+            </button>
+          )}
+          {auction.status === 'ended' && (
+            <button 
+              className="primary" 
+              onClick={handleExportData} 
+              disabled={isExporting}
+              style={{ background: '#10b981', border: 'none' }}
+            >
+              {isExporting ? '⌛ Processing...' : '⬇️ Download Point-to-Point CSV'}
             </button>
           )}
           <button className="secondary" onClick={handleClear}>
@@ -202,7 +280,7 @@ export default function HostAuctionPage() {
               <tr>
                 <th>Bidder</th>
                 <th>Last bid</th>
-                <th>Total bids</th>
+                <th>Status</th>
               </tr>
             </thead>
             <tbody>
@@ -210,16 +288,27 @@ export default function HostAuctionPage() {
                 .slice()
                 .sort((a, b) => (b.lastBid || 0) - (a.lastBid || 0))
                 .map((b, idx) => (
-                <tr key={b.id}>
+                <tr key={b.id} style={{ opacity: (b.status === 'dropped' || b.status === 'left') ? 0.6 : 1 }}>
                   <td>#{idx + 1} - {b.name}</td>
                   <td className="bid-amount">{formatCurrency(b.lastBid ?? 0)}</td>
-                  <td className="bid-count">{(b.bids || []).length}</td>
+                  <td>
+                    <span className="badge" style={{ 
+                      background: b.status === 'active' ? '#22c55e' : (b.status === 'dropped' ? '#ef4444' : '#f59e0b'),
+                      color: 'white',
+                      padding: '0.2rem 0.5rem',
+                      borderRadius: '4px',
+                      fontSize: '0.75rem',
+                      fontWeight: 700
+                    }}>
+                      {(b.status || 'Active').toUpperCase()}
+                    </span>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         ) : (
-          <p>No bidders have joined yet.</p>
+          <p>No participants yet.</p>
         )}
 
         {auction.status === 'ended' && (
@@ -236,6 +325,33 @@ export default function HostAuctionPage() {
           </div>
         )}
       </section>
+      </div>
+
+      <ModalDialog
+        isOpen={showStartModal}
+        title="Start Auction"
+        message="How long should the auction run? (in seconds)"
+        type="prompt"
+        defaultValue="60"
+        onConfirm={handleStartConfirm}
+        onCancel={() => setShowStartModal(false)}
+        confirmText="Start"
+        cancelText="Cancel"
+      />
+
+      <ModalDialog
+        isOpen={showClearModal}
+        title="Clear Auction"
+        message="Are you sure you want to clear all bidders and bids? This action cannot be undone."
+        type="confirm"
+        onConfirm={handleClearConfirm}
+        onCancel={() => setShowClearModal(false)}
+        confirmText="Clear"
+        cancelText="Cancel"
+      />
+
+      <div style={{ maxWidth: '800px', margin: '0 auto', padding: '0 1.5rem' }}>
+        <NetworkAccessInfo />
       </div>
     </main>
   );

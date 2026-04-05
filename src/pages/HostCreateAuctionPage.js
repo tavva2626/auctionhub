@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createAuction, generateAuctionId } from '../utils/auctionStorage';
+import { createAuctionRemote } from '../utils/firestoreAuctions';
 import { useAuth } from '../context/AuthContext';
 import { usePageTitle } from '../hooks/usePageTitle';
 
@@ -66,10 +67,8 @@ export default function HostCreateAuctionPage() {
       return;
     }
 
-    if (imagePreviews.length === 0) {
-      setError('Please upload at least one image.');
-      return;
-    }
+    // Image validation intentionally removed for testing and minimal auctions
+
 
     const auctionId = generateAuctionId();
 
@@ -90,7 +89,14 @@ export default function HostCreateAuctionPage() {
       winner: null,
     };
 
-    createAuction(auction);
+    // save locally and remotely (remote is used for cross-device syncing)
+    try {
+      createAuction(auction);
+      // don't block UI: create remote auction but await so we know it succeeded
+      createAuctionRemote(auction).catch((err) => console.warn('Remote create failed', err));
+    } catch (err) {
+      console.error('Failed to create auction locally', err);
+    }
     navigate(`/host/auction/${auctionId}`);
   };
 

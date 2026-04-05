@@ -1,16 +1,25 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { getMultiItemAuctionById, addBidToItem, addBidderToItem, formatCurrency, dropBidForItem } from '../utils/auctionStorage';
+import { formatCurrency } from '../utils/auctionStorage';
+import { 
+  listenMultiItemAuctionRemote, 
+  placeMultiItemBidRemote, 
+  dropMultiItemBidRemote, 
+  addBidderToMultiItemRemote,
+  leaveMultiItemAuctionRemote
+} from '../utils/firestoreAuctions';
 import { usePageTitle } from '../hooks/usePageTitle';
+import ModalDialog from '../components/ModalDialog';
 
 export default function MultiItemAuctionBidderPage() {
   usePageTitle('Bidder - Multi-Item AuctionRoom');
   const { auctionId } = useParams();
   const navigate = useNavigate();
-  const [auction, setAuction] = useState(() => getMultiItemAuctionById(auctionId));
+  const [auction, setAuction] = useState(null);
   const [now, setNow] = useState(Date.now());
   const [bidAmount, setBidAmount] = useState('');
   const [error, setError] = useState('');
+  const [showDropModal, setShowDropModal] = useState(false);
 
   const storedBidder = (() => {
     try {
@@ -30,39 +39,53 @@ export default function MultiItemAuctionBidderPage() {
     return storedBidder;
   })();
 
-  const currentItemIdx = auction?.currentItemIndex ?? 0;
-  const currentItem = auction?.items?.[currentItemIdx];
+  useEffect(() => {
+    const unsub = listenMultiItemAuctionRemote(auctionId, (data) => {
+      setAuction(data);
+    });
+    return () => unsub && unsub();
+  }, [auctionId]);
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 500);
     return () => clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    const fresh = getMultiItemAuctionById(auctionId);
-    if (fresh) setAuction(fresh);
-  }, [now, auctionId]);
-
-  // Ensure bidder is registered for all items
+  // Ensure bidder is registered for all items in the remote DB
   useEffect(() => {
     if (!auction || !bidder) return;
     
+    let needsSync = false;
     auction.items?.forEach((item) => {
       if (!item.bidders?.find((b) => b.id === bidder.bidderId)) {
-        addBidderToItem(auctionId, item.id, {
-          id: bidder.bidderId,
-          name: bidder.name,
-          joinedAt: Date.now(),
-        });
+        needsSync = true;
       }
     });
+
+    if (needsSync) {
+      addBidderToMultiItemRemote(auctionId, {
+        id: bidder.bidderId,
+        name: bidder.name
+      });
+    }
   }, [auction, auctionId, bidder]);
 
   if (!auction) {
     return (
       <main className="page">
         <div className="card">
-          <h2>Auction not found</h2>
+          <h2>Loading auction...</h2>
+        </div>
+      </main>
+    );
+  }
+
+  if (auction.status === 'ended') {
+    return (
+      <main className="page">
+        <div className="card" style={{ textAlign: 'center', padding: '2rem' }}>
+          <h2 style={{ color: '#ef4444' }}>🔴 Auction Expired</h2>
+          <p>This auction session has already been completed by the host.</p>
           <button className="primary" onClick={() => navigate('/home')}>Back to home</button>
         </div>
       </main>
@@ -80,6 +103,9 @@ export default function MultiItemAuctionBidderPage() {
       </main>
     );
   }
+
+  const currentItemIdx = auction?.currentItemIndex ?? 0;
+  const currentItem = auction?.items?.[currentItemIdx];
 
   if (!currentItem) {
     return (
@@ -103,7 +129,7 @@ export default function MultiItemAuctionBidderPage() {
     return Math.max(top, currentItem.basePrice || 0);
   })();
 
-  const getWinner = (item) => {
+  const getWinnerForItem = (item) => {
     if (!item?.bidders?.length) return null;
     let winner = null;
     item.bidders.forEach((b) => {
@@ -115,18 +141,19 @@ export default function MultiItemAuctionBidderPage() {
     return winner;
   };
 
-  const winner = getWinner(currentItem);
+  const winner = getWinnerForItem(currentItem);
 
-  // Check if current bidder is dropped for this item
+  // Check status for this item
   const currentBidderInfo = currentItem.bidders?.find((b) => b.id === bidder.bidderId);
-  const isDropped = currentBidderInfo?.isDropped || false;
+  const isDropped = currentBidderInfo?.status === 'dropped' || currentBidderInfo?.isDropped;
+  const hasLeft = currentBidderInfo?.status === 'left';
 
-  const handleBid = (event) => {
+  const handleBid = async (event) => {
     event.preventDefault();
     setError('');
 
-    if (isDropped) {
-      setError('You cannot bid any more because you dropped from this auction.');
+    if (isDropped || hasLeft) {
+      setError('You cannot bid because you are no longer active in this auction.');
       return;
     }
 
@@ -140,17 +167,27 @@ export default function MultiItemAuctionBidderPage() {
       return;
     }
 
-    addBidToItem(auctionId, currentItem.id, bidder.bidderId, amount);
-    setBidAmount('');
-  };
-
-  const handleDropBid = () => {
-    if (window.confirm('Are you sure you want to drop out of this item?')) {
-      dropBidForItem(auctionId, currentItem.id, bidder.bidderId);
+    try {
+      await placeMultiItemBidRemote(auctionId, currentItemIdx, bidder.bidderId, amount);
+      setBidAmount('');
+    } catch (err) {
+      setError(err.message);
     }
   };
 
-  const handleLeave = () => {
+  const handleDropBid = () => {
+    setShowDropModal(true);
+  };
+
+  const handleDropConfirm = async (confirmed) => {
+    setShowDropModal(false);
+    if (confirmed) {
+      await dropMultiItemBidRemote(auctionId, currentItemIdx, bidder.bidderId);
+    }
+  };
+
+  const handleLeave = async () => {
+    await leaveMultiItemAuctionRemote(auctionId, bidder.bidderId);
     sessionStorage.removeItem('auctionApp.currentMultiBidder');
     localStorage.removeItem('auctionApp.currentMultiBidder');
     navigate('/home');
@@ -179,21 +216,6 @@ export default function MultiItemAuctionBidderPage() {
                 </p>
               </div>
             </div>
-
-            {currentItem.imagePreviews?.[0] && (
-              <img
-                src={currentItem.imagePreviews[0]}
-                alt={currentItem.title}
-                style={{
-                  width: '100%',
-                  maxHeight: '400px',
-                  objectFit: 'cover',
-                  borderRadius: '12px',
-                  marginBottom: '1rem',
-                  border: '1px solid #e5e7eb'
-                }}
-              />
-            )}
 
             <p style={{ color: 'var(--muted)', margin: '0 0 1rem' }}>
               {currentItem.description || 'No description provided'}
@@ -264,7 +286,7 @@ export default function MultiItemAuctionBidderPage() {
           )}
 
           {/* Bidding Form */}
-          {canBid && !isDropped && (
+          {canBid && !isDropped && !hasLeft && (
             <div className="card">
               <h3 style={{ marginTop: 0 }}>💰 Place Your Bid</h3>
               <form onSubmit={handleBid}>
@@ -303,7 +325,7 @@ export default function MultiItemAuctionBidderPage() {
             </div>
           )}
 
-          {isDropped && (
+          {(isDropped || hasLeft) && (
             <div className="card" style={{
               padding: '1.5rem',
               background: 'rgba(239, 68, 68, 0.1)',
@@ -311,7 +333,7 @@ export default function MultiItemAuctionBidderPage() {
               borderRadius: '8px'
             }}>
               <p style={{ margin: 0, fontWeight: 600, color: '#dc2626' }}>
-                🚫 You have dropped from this item and cannot bid anymore.
+                🚫 You are no longer active in this auction item ({isDropped ? 'Dropped' : 'Left'}).
               </p>
             </div>
           )}
@@ -330,7 +352,7 @@ export default function MultiItemAuctionBidderPage() {
           {/* Current Bidders */}
           <div className="card" style={{ maxHeight: '70vh', overflow: 'auto' }}>
             <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>
-              👥 Bidders ({currentItem.bidders?.length || 0})
+              👥 Bidders ({(currentItem.bidders || []).length})
             </h3>
             {currentItem.bidders?.length ? (
               <div>
@@ -346,23 +368,25 @@ export default function MultiItemAuctionBidderPage() {
                         borderRadius: '8px',
                         marginBottom: '0.5rem',
                         borderLeft: `3px solid ${b.id === bidder.bidderId ? '#3b82f6' : '#e5e7eb'}`,
-                        opacity: b.isDropped ? 0.6 : 1
+                        opacity: (b.status === 'dropped' || b.status === 'left') ? 0.6 : 1
                       }}
                     >
                       <p style={{ margin: '0 0 0.25rem', fontWeight: 600, color: 'var(--text)' }}>
-                        #{idx + 1} - {b.name} {b.id === bidder.bidderId && '(You)'} {b.isDropped && '🚫'}
+                        #{idx + 1} - {b.name} {b.id === bidder.bidderId && '(You)'} 
+                        {b.status === 'dropped' && ' 🚫'}
+                        {b.status === 'left' && ' 🚪'}
                       </p>
                       <p style={{ margin: 0, fontSize: '0.9rem', color: '#f59e0b' }}>
                         {formatCurrency(b.lastBid || 0)}
                       </p>
                       <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--muted)' }}>
-                        {b.isDropped ? 'Dropped' : `${(b.bids || []).length} bid(s)`}
+                        {b.status === 'active' ? 'Active' : (b.status === 'dropped' ? 'Dropped' : 'Left')}
                       </p>
                     </div>
                   ))}
               </div>
             ) : (
-              <p style={{ color: 'var(--muted)' }}>No bids yet</p>
+              <p style={{ color: 'var(--muted)' }}>No bidders yet</p>
             )}
           </div>
 
@@ -379,8 +403,6 @@ export default function MultiItemAuctionBidderPage() {
                     background: idx === currentItemIdx ? 'rgba(59, 130, 246, 0.1)' : '#f9fafb',
                     borderRadius: '8px',
                     border: idx === currentItemIdx ? '1px solid #3b82f6' : '1px solid #e5e7eb',
-                    cursor: 'pointer',
-                    transition: 'all 200ms'
                   }}
                 >
                   <p style={{ margin: '0 0 0.25rem', fontWeight: idx === currentItemIdx ? 600 : 400, color: 'var(--text)' }}>
@@ -397,6 +419,17 @@ export default function MultiItemAuctionBidderPage() {
           </div>
         </div>
       </div>
+
+      <ModalDialog
+        isOpen={showDropModal}
+        title="Drop Out"
+        message="Are you sure you want to drop out of this item? You won't be able to bid anymore on this item."
+        type="confirm"
+        onConfirm={handleDropConfirm}
+        onCancel={() => setShowDropModal(false)}
+        confirmText="Drop Out"
+        cancelText="Cancel"
+      />
     </main>
   );
 }

@@ -1,0 +1,39 @@
+// Starter Firestore security rules for the auction app.
+// These are a starting point — review and tighten before production.
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Auctions collection
+    match /auctions/{auctionId} {
+      // Allow anyone to read auction documents
+      allow read: if true;
+
+      // Allow authenticated users to create auctions with basic shape checks
+      allow create: if request.auth != null
+        && request.resource.data.title is string
+        && request.resource.data.basePrice is number
+        && request.resource.data.status is string;
+
+      // Allow authenticated users to update auctions, with simple validations
+      allow update: if request.auth != null
+        // ensure bidders is a list when present
+        && ( !("bidders" in request.resource.data) || request.resource.data.bidders is list )
+        // if highestBid is provided, it must be numeric
+        && ( !("highestBid" in request.resource.data) || request.resource.data.highestBid is number );
+
+      // Subcollection for bids (history)
+      match /bids/{bidId} {
+        // allow read
+        allow read: if true;
+        // writes allowed only for authenticated users and with expected fields
+        allow create: if request.auth != null
+          && request.resource.data.bidderId is string
+          && request.resource.data.amount is number
+          && request.resource.data.time is timestamp;
+        // no updates or deletes allowed for bid history
+        allow update, delete: if false;
+      }
+    }
+  }
+}

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { getMultiItemAuctionById, generateAuctionId } from '../utils/auctionStorage';
+import { generateAuctionId } from '../utils/auctionStorage';
+import { getMultiItemAuctionRemote } from '../utils/firestoreAuctions';
 import { usePageTitle } from '../hooks/usePageTitle';
 
 function useQuery() {
@@ -17,10 +18,15 @@ export default function MultiItemBidderJoinPage() {
   const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [auction, setAuction] = useState(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!auctionId) return;
-    setAuction(getMultiItemAuctionById(auctionId));
+    setLoading(true);
+    getMultiItemAuctionRemote(auctionId).then((remote) => {
+      if (remote) setAuction(remote);
+      setLoading(false);
+    }).catch(() => setLoading(false));
   }, [auctionId]);
 
   const handleJoin = (event) => {
@@ -32,37 +38,40 @@ export default function MultiItemBidderJoinPage() {
       return;
     }
 
-    const found = getMultiItemAuctionById(auctionId.trim());
-    if (!found) {
-      setError('No auction found with that ID.');
+    if (!auction) {
+      setError('Searching for auction...');
       return;
     }
 
-    if (found.password !== password.trim()) {
+    if (auction.status === 'ended') {
+      setError('🔴 This auction session has ended and is no longer accepting bidders.');
+      return;
+    }
+
+    if (auction.password !== password.trim()) {
       setError('Incorrect password for this auction.');
       return;
     }
 
-    // Check total bidder count across all items
     const totalBidders = new Set();
-    (found.items || []).forEach((item) => {
+    (auction.items || []).forEach((item) => {
       (item.bidders || []).forEach((b) => {
         totalBidders.add(b.id);
       });
     });
 
-    if (found.maxBidders > 0 && totalBidders.size >= found.maxBidders) {
+    if (auction.maxBidders > 0 && totalBidders.size >= auction.maxBidders) {
       setError('This auction has reached its maximum number of bidders.');
       return;
     }
 
     const bidderId = generateAuctionId();
-    const bidderInfo = { auctionId: found.id, bidderId, name: name.trim() };
+    const bidderInfo = { auctionId: auction.id, bidderId, name: name.trim() };
 
     localStorage.setItem('auctionApp.currentMultiBidder', JSON.stringify(bidderInfo));
     sessionStorage.setItem('auctionApp.currentMultiBidder', JSON.stringify(bidderInfo));
 
-    navigate(`/multi-auction/${found.id}`);
+    navigate(`/multi-auction/${auction.id}`);
   };
 
   return (
@@ -85,25 +94,27 @@ export default function MultiItemBidderJoinPage() {
             Join Multi-Item Auction
           </h1>
           <p style={{ margin: '0.5rem 0 0', color: 'var(--muted)', fontSize: '0.95rem' }}>
-            Bid on multiple items in one auction session
+            Bid on multiple items in one professional session
           </p>
         </div>
 
         <div className="card">
+          {auction?.status === 'ended' && (
+            <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid #ef4444', padding: '1rem', borderRadius: '10px', marginBottom: '1.5rem', textAlign: 'center' }}>
+              <h3 style={{ color: '#ef4444', margin: 0 }}>🚫 Auction Completed</h3>
+              <p style={{ margin: '0.5rem 0 0', fontSize: '0.9rem' }}>The host has finished this session. The link is now expired.</p>
+            </div>
+          )}
+
           <form onSubmit={handleJoin}>
             <label>
               💼 Auction ID
-              <input value={auctionId} onChange={(e) => setAuctionId(e.target.value)} placeholder="Enter auction ID" />
+              <input value={auctionId} onChange={(e) => setAuctionId(e.target.value)} placeholder="Enter auction ID" disabled={loading} />
             </label>
 
             <label>
               🔐 Auction Password
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter auction password"
-              />
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter password" />
             </label>
 
             <label>
@@ -111,30 +122,16 @@ export default function MultiItemBidderJoinPage() {
               <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Enter your name" />
             </label>
 
-            {auction && (
-              <div style={{
-                marginTop: '1.5rem',
-                padding: '1rem',
-                backgroundColor: 'rgba(59, 130, 246, 0.08)',
-                border: '1px solid rgba(59, 130, 246, 0.2)',
-                borderRadius: '10px'
-              }}>
-                <h3 style={{ margin: '0 0 0.75rem', color: 'var(--text)' }}>📋 Auction Details</h3>
-                <p style={{ margin: '0 0 0.5rem', fontWeight: 600, color: 'var(--text)' }}>
-                  {auction.name}
-                </p>
-                <p style={{ margin: '0 0 0.25rem', color: 'var(--text)', fontSize: '0.9rem' }}>
-                  <strong>Items:</strong> {auction.items?.length || 0} item(s)
-                </p>
-                <p style={{ margin: '0', color: 'var(--text)', fontSize: '0.9rem' }}>
-                  <strong>Max Bidders:</strong> {auction.maxBidders}
-                </p>
+            {auction && auction.status !== 'ended' && (
+              <div style={{ marginTop: '1.5rem', padding: '1rem', backgroundColor: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.2)', borderRadius: '10px' }}>
+                <p style={{ margin: '0 0 0.5rem', fontWeight: 600 }}>{auction.name}</p>
+                <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--muted)' }}>Items: {auction.items?.length || 0}</p>
               </div>
             )}
 
-            {error && <div className="form-error">{error}</div>}
+            {error && <div className="form-error" style={{ marginTop: '1rem' }}>{error}</div>}
 
-            <button type="submit" className="primary" style={{ width: '100%', marginTop: '1.5rem' }}>
+            <button type="submit" className="primary" style={{ width: '100%', marginTop: '1.5rem' }} disabled={auction?.status === 'ended'}>
               Join Auction
             </button>
           </form>

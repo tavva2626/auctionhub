@@ -1,21 +1,25 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
-import { getMultiItemAuctionById, updateMultiItemAuction } from '../utils/auctionStorage';
-import { useAuth } from '../context/AuthContext';
 import { formatCurrency } from '../utils/auctionStorage';
+import { listenMultiItemAuctionRemote, updateMultiItemAuctionRemote, getAuctionBidHistory } from '../utils/firestoreAuctions';
+import { useAuth } from '../context/AuthContext';
 import { usePageTitle } from '../hooks/usePageTitle';
+import NetworkAccessInfo from '../components/NetworkAccessInfo';
+import { getNetworkURL } from '../utils/networkURL';
 
 export default function MultiItemAuctionHostPage() {
   usePageTitle('Host - Multi-Item Auction');
   const { auctionId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [auction, setAuction] = useState(() => getMultiItemAuctionById(auctionId));
+  const [auction, setAuction] = useState(null);
   const [now, setNow] = useState(Date.now());
   const [timerSeconds, setTimerSeconds] = useState('60');
   const [showWinnerAlert, setShowWinnerAlert] = useState(false);
   const [winnerMessage, setWinnerMessage] = useState('');
+  const [copyFeedback, setCopyFeedback] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   const isHost = user?.username === auction?.createdBy;
   const currentItemIdx = auction?.currentItemIndex ?? 0;
@@ -28,14 +32,16 @@ export default function MultiItemAuctionHostPage() {
   }, [user, navigate]);
 
   useEffect(() => {
+    const unsub = listenMultiItemAuctionRemote(auctionId, (data) => {
+      setAuction(data);
+    });
+    return () => unsub && unsub();
+  }, [auctionId]);
+
+  useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 500);
     return () => clearInterval(interval);
   }, []);
-
-  useEffect(() => {
-    const fresh = getMultiItemAuctionById(auctionId);
-    if (fresh) setAuction(fresh);
-  }, [now, auctionId]);
 
   const getWinnerForItem = (item) => {
     if (!item?.bidders?.length) return null;
@@ -49,14 +55,14 @@ export default function MultiItemAuctionHostPage() {
     return winner;
   };
 
-  const updateItemStatus = (status) => {
-    if (!currentItem) return;
+  const updateItemStatus = useCallback(async (status) => {
+    if (!currentItem || !auction) return;
     const items = (auction.items || []).map((item) => {
       if (item.id !== currentItem.id) return item;
       return { ...item, status };
     });
-    updateMultiItemAuction(auctionId, { items });
-  };
+    await updateMultiItemAuctionRemote(auctionId, { items });
+  }, [auction, currentItem, auctionId]);
 
   useEffect(() => {
     if (!currentItem || currentItem.status !== 'started') return;
@@ -78,10 +84,10 @@ export default function MultiItemAuctionHostPage() {
       // Update item status to ended
       updateItemStatus('ended');
     }
-  }, [currentItem, now, currentItemIdx]);
+  }, [currentItem, now, currentItemIdx, updateItemStatus]);
 
-  const handleStartTimer = () => {
-    if (!currentItem) return;
+  const handleStartTimer = async () => {
+    if (!currentItem || !auction) return;
     const seconds = Number(timerSeconds) || 60;
     if (seconds <= 0) return;
 
@@ -91,7 +97,7 @@ export default function MultiItemAuctionHostPage() {
       return { ...item, status: 'started', timerEnd };
     });
 
-    updateMultiItemAuction(auctionId, { items });
+    await updateMultiItemAuctionRemote(auctionId, { items });
   };
 
   const handleEndTimer = () => {
@@ -99,17 +105,59 @@ export default function MultiItemAuctionHostPage() {
     updateItemStatus('ended');
   };
 
-  const moveToNextItem = () => {
+  const moveToNextItem = async () => {
     if (currentItemIdx + 1 < auction.items.length) {
-      updateMultiItemAuction(auctionId, { currentItemIndex: currentItemIdx + 1 });
+      await updateMultiItemAuctionRemote(auctionId, { currentItemIndex: currentItemIdx + 1 });
       setShowWinnerAlert(false);
       setTimerSeconds('60');
     }
   };
 
-  const completeAuction = () => {
-    updateMultiItemAuction(auctionId, { status: 'ended' });
-    navigate('/home');
+  const completeAuction = async () => {
+    await updateMultiItemAuctionRemote(auctionId, { status: 'ended' });
+  };
+
+  const handleExportData = async () => {
+    if (!auction || isExporting) return;
+    setIsExporting(true);
+    try {
+      const history = await getAuctionBidHistory(auction.id, true);
+      
+      const headers = ["Timestamp", "Event", "Item", "Bidder Name", "Value", "Bidder ID"];
+      const rows = history.map(event => {
+        const time = event.time?.seconds 
+          ? new Date(event.time.seconds * 1000).toLocaleString() 
+          : new Date().toLocaleString();
+        
+        return [
+          `"${time}"`,
+          `"${(event.type || 'bid').toUpperCase()}"`,
+          `"${(event.itemTitle || 'Global').replace(/"/g, '""')}"`,
+          `"${(event.bidderName || 'Unknown').replace(/"/g, '""')}"`,
+          event.amount || 0,
+          `"${event.bidderId || ''}"`
+        ];
+      });
+
+      const csvContent = [
+        headers.join(","),
+        ...rows.map(row => row.join(","))
+      ].join("\n");
+
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `multi-auction-${auction.id}-audit-log.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert("Failed to export: " + err.message);
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   if (!auction) {
@@ -147,8 +195,16 @@ export default function MultiItemAuctionHostPage() {
   }
 
   const timeLeft = currentItem.timerEnd ? Math.max(0, currentItem.timerEnd - now) : 0;
-  const canBid = currentItem.status === 'started' && timeLeft > 0;
-  const shareLink = `${window.location.origin}/bid/multi-join?auctionId=${auction.id}&password=${encodeURIComponent(auction.password)}`;
+  const shareLink = getNetworkURL(`/bid/multi-join?auctionId=${auction.id}&password=${encodeURIComponent(auction.password)}`);
+
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(shareLink).then(() => {
+      setCopyFeedback(true);
+      setTimeout(() => setCopyFeedback(false), 2000);
+    }).catch(() => {
+      alert('Failed to copy link');
+    });
+  };
 
   return (
     <main className="page" style={{ paddingBottom: '3rem' }}>
@@ -206,31 +262,6 @@ export default function MultiItemAuctionHostPage() {
               />
             )}
 
-            {currentItem.imagePreviews?.length > 1 && (
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(4, 1fr)',
-                gap: '0.75rem',
-                marginBottom: '1rem'
-              }}>
-                {currentItem.imagePreviews.map((img, idx) => (
-                  <img
-                    key={idx}
-                    src={img}
-                    alt={`${currentItem.title} ${idx + 1}`}
-                    style={{
-                      width: '100%',
-                      height: '80px',
-                      objectFit: 'cover',
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                      border: '2px solid #e5e7eb'
-                    }}
-                  />
-                ))}
-              </div>
-            )}
-
             <p style={{ color: 'var(--muted)', margin: '0 0 1rem' }}>
               {currentItem.description}
             </p>
@@ -263,7 +294,7 @@ export default function MultiItemAuctionHostPage() {
           <div className="card">
             <h3 style={{ marginTop: 0 }}>⏱️ Timer Management</h3>
 
-            {currentItem.status === 'waiting' && (
+            {currentItem.status === 'waiting' && !currentItem.timerEnd && (
               <div>
                 <div style={{
                   display: 'grid',
@@ -356,19 +387,25 @@ export default function MultiItemAuctionHostPage() {
               Share this with bidders to join the multi-item auction
             </p>
             <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-              <input
-                readOnly
-                value={shareLink}
+              <input readOnly value={shareLink} style={{ flex: 1, padding: '0.75rem', borderRadius: '10px', border: '1px solid #e5e7eb', fontSize: '0.85rem', color: 'var(--muted)' }} />
+              <button
+                onClick={handleCopyLink}
+                title="Copy link to clipboard"
                 style={{
-                  flex: 1,
-                  padding: '0.75rem',
-                  borderRadius: '10px',
-                  border: '1px solid #e5e7eb',
-                  fontSize: '0.85rem',
-                  color: 'var(--muted)'
+                  background: copyFeedback ? '#10b981' : 'var(--primary)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '0.75rem 1rem',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                  transition: 'all 200ms ease',
+                  fontSize: '0.9rem',
                 }}
-              />
-              <QRCodeCanvas value={shareLink} size={120} />
+              >
+                {copyFeedback ? '✓ Copied!' : '📋 Copy'}
+              </button>
+              <QRCodeCanvas value={shareLink} size={100} />
             </div>
           </div>
         </div>
@@ -378,7 +415,7 @@ export default function MultiItemAuctionHostPage() {
           {/* Participants */}
           <div className="card" style={{ maxHeight: '70vh', overflow: 'auto' }}>
             <h3 style={{ marginTop: 0 }}>
-              👥 Bidders ({currentItem.bidders?.length || 0})
+              👥 Bidders ({(currentItem.bidders || []).length})
             </h3>
             {currentItem.bidders?.length ? (
               <div>
@@ -394,18 +431,27 @@ export default function MultiItemAuctionHostPage() {
                         borderRadius: '8px',
                         marginBottom: '0.5rem',
                         borderLeft: '3px solid #3b82f6',
-                        opacity: b.isDropped ? 0.6 : 1
+                        opacity: (b.status === 'left' || b.status === 'dropped') ? 0.6 : 1
                       }}
                     >
                       <p style={{ margin: '0 0 0.25rem', fontWeight: 600, color: 'var(--text)' }}>
-                        #{idx + 1} - {b.name} {b.isDropped && '🚫'}
+                        #{idx + 1} - {b.name}
                       </p>
                       <p style={{ margin: 0, fontSize: '0.9rem', color: '#f59e0b' }}>
                         Bid: {formatCurrency(b.lastBid || 0)}
                       </p>
-                      <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--muted)' }}>
-                        {b.isDropped ? 'Dropped' : `Bids: ${(b.bids || []).length}`}
-                      </p>
+                      <div style={{ marginTop: '0.25rem' }}>
+                        <span style={{ 
+                          fontSize: '0.7rem', 
+                          fontWeight: 700, 
+                          background: b.status === 'active' ? '#22c55e' : (b.status === 'dropped' ? '#ef4444' : '#f59e0b'),
+                          color: 'white',
+                          padding: '0.1rem 0.4rem',
+                          borderRadius: '4px'
+                        }}>
+                          {(b.status || 'Active').toUpperCase()}
+                        </span>
+                      </div>
                     </div>
                   ))}
               </div>
@@ -422,7 +468,7 @@ export default function MultiItemAuctionHostPage() {
                 <button
                   key={item.id}
                   onClick={() => {
-                    updateMultiItemAuction(auctionId, { currentItemIndex: idx });
+                    updateMultiItemAuctionRemote(auctionId, { currentItemIndex: idx });
                     setShowWinnerAlert(false);
                   }}
                   style={{
@@ -451,50 +497,37 @@ export default function MultiItemAuctionHostPage() {
             </div>
           </div>
 
-          {/* Navigation Buttons */}
-          {currentItem.status === 'ended' && currentItemIdx < auction.items.length - 1 && (
-            <button
-              onClick={moveToNextItem}
-              className="primary"
-              style={{ width: '100%', marginTop: '1rem' }}
-            >
-              → Next Item
-            </button>
-          )}
+          {/* Navigation & Controls */}
+          <div style={{ marginTop: '1rem' }}>
+            {currentItem.status === 'ended' && currentItemIdx < auction.items.length - 1 && (
+              <button onClick={moveToNextItem} className="primary" style={{ width: '100%' }}> → Next Item</button>
+            )}
 
-          {currentItemIdx === auction.items.length - 1 && currentItem.status === 'ended' && (
-            <button
-              onClick={completeAuction}
-              style={{
-                width: '100%',
-                marginTop: '1rem',
-                padding: '0.85rem',
-                background: 'linear-gradient(135deg, #22c55e, #16a34a)',
-                color: 'white',
-                border: 'none',
-                borderRadius: '10px',
-                fontWeight: 600,
-                cursor: 'pointer'
-              }}
-            >
-              ✅ Complete Auction
-            </button>
-          )}
+            {currentItemIdx === auction.items.length - 1 && currentItem.status === 'ended' && auction.status !== 'ended' && (
+              <button onClick={completeAuction} className="primary" style={{ width: '100%', background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}>✅ Complete Auction Session</button>
+            )}
+
+            {auction.status === 'ended' && (
+              <div style={{ marginTop: '1rem' }}>
+                <button onClick={handleExportData} disabled={isExporting} style={{ width: '100%', padding: '0.85rem', background: '#10b981', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600 }}>
+                  {isExporting ? '⌛ Processing CSV...' : '⬇️ Download Audit Log (CSV)'}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       <style>{`
         @keyframes slideDown {
-          from {
-            opacity: 0;
-            transform: translateX(-50%) translateY(-20px);
-          }
-          to {
-            opacity: 1;
-            transform: translateX(-50%) translateY(0);
-          }
+          from { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+          to { opacity: 1; transform: translateX(-50%) translateY(0); }
         }
       `}</style>
+
+      <div style={{ maxWidth: '800px', margin: '2rem auto 0', padding: '0 1.5rem' }}>
+        <NetworkAccessInfo />
+      </div>
     </main>
   );
 }

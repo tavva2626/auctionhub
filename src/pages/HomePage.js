@@ -2,6 +2,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { usePageTitle } from '../hooks/usePageTitle';
+import NetworkAccessInfo from '../components/NetworkAccessInfo';
 
 export default function HomePage() {
   usePageTitle('Home - Dashboard');
@@ -29,7 +30,7 @@ export default function HomePage() {
       </header>
 
       <section className="card role-selection">
-        <h2 style={{ margin: '0 0 1rem', color: 'var(--text)', textAlign: 'center' }}>Single Item Auction</h2>
+        <h2 style={{ margin: '0 0 1rem', textAlign: 'center' }}>Single Item Auction</h2>
         <Link to="/host/create" className="big-button">
           Host an Auction
         </Link>
@@ -39,11 +40,11 @@ export default function HomePage() {
       </section>
 
       <section className="card role-selection">
-        <h2 style={{ margin: '0 0 1rem', color: 'var(--text)', textAlign: 'center' }}>Multiple Items Auction</h2>
-        <Link to="/host/multi-create" className="big-button" style={{ background: 'linear-gradient(135deg, #8b5cf6, #a78bfa)' }}>
+        <h2 style={{ margin: '0 0 1rem', textAlign: 'center' }}>Multiple Items Auction</h2>
+        <Link to="/host/multi-create" className="big-button">
           Create Multi-Item Auction
         </Link>
-        <Link to="/bid/multi-join" className="big-button" style={{ background: 'linear-gradient(135deg, #ec4899, #f472b6)' }}>
+        <Link to="/bid/multi-join" className="big-button">
           Join Multi-Item Auction
         </Link>
       </section>
@@ -62,6 +63,11 @@ export default function HomePage() {
           </li>
         </ul>
       </section>
+
+      {/* Network Access Information */}
+      <div style={{ maxWidth: '800px', margin: '2rem auto 0' }}>
+        <NetworkAccessInfo />
+      </div>
     </main>
   );
 }

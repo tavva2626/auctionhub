@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createMultiItemAuction, generateAuctionId } from '../utils/auctionStorage';
 import { useAuth } from '../context/AuthContext';
+import { createMultiItemAuctionRemote } from '../utils/firestoreAuctions';
 import { usePageTitle } from '../hooks/usePageTitle';
 
 export default function MultiItemAuctionCreatePage() {
@@ -70,10 +71,7 @@ export default function MultiItemAuctionCreatePage() {
       setError('Item title is required');
       return;
     }
-    if (currentItem.imagePreviews.length === 0) {
-      setError('Upload at least one image for the item');
-      return;
-    }
+    // Removed hard block for empty images to permit blank/test items
 
     const newItem = {
       ...currentItem,
@@ -133,6 +131,9 @@ export default function MultiItemAuctionCreatePage() {
     };
 
     createMultiItemAuction(multiAuction);
+    // don't block UI: push to Firestore in the background
+    createMultiItemAuctionRemote(multiAuction).catch(err => console.warn('Remote sync failed:', err));
+
     navigate(`/host/multi-auction/${auctionId}`);
   };
 

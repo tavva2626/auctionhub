@@ -10,8 +10,87 @@ function loadAuctions() {
   }
 }
 
+function isQuotaExceeded(e) {
+  if (!e) return false;
+  return (
+    e.code === 22 ||
+    e.name === 'QuotaExceededError' ||
+    e.name === 'NS_ERROR_DOM_QUOTA_REACHED'
+  );
+}
+
+function sanitizeForStorage(input) {
+  try {
+    const copy = JSON.parse(JSON.stringify(input));
+
+    const sanitizeAuction = (a) => {
+      // Remove or shrink any large binary/data fields that commonly exceed quota
+      if (a.imagePreviews && Array.isArray(a.imagePreviews)) {
+        // keep at most first preview (likely a small thumbnail) and drop data URLs
+        a.imagePreviews = a.imagePreviews
+          .slice(0, 1)
+          .map((p) => (typeof p === 'string' && p.startsWith('data:') ? '' : p));
+      }
+      if (a.items && Array.isArray(a.items)) {
+        a.items.forEach((it) => {
+          if (it.imagePreviews && Array.isArray(it.imagePreviews)) {
+            it.imagePreviews = it.imagePreviews
+              .slice(0, 1)
+              .map((p) => (typeof p === 'string' && p.startsWith('data:') ? '' : p));
+          }
+          // drop very large nested arrays like bids history if present
+          if (it.bids && Array.isArray(it.bids) && it.bids.length > 50) {
+            it.bids = it.bids.slice(-20);
+          }
+        });
+      }
+      if (a.bidders && Array.isArray(a.bidders)) {
+        a.bidders.forEach((b) => {
+          if (b.bids && Array.isArray(b.bids) && b.bids.length > 50) {
+            b.bids = b.bids.slice(-20);
+          }
+        });
+      }
+    };
+
+    if (Array.isArray(copy)) {
+      copy.forEach(sanitizeAuction);
+    } else if (copy && typeof copy === 'object') {
+      sanitizeAuction(copy);
+    }
+
+    return copy;
+  } catch (err) {
+    return input;
+  }
+}
+
 function saveAuctions(auctions) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(auctions));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(auctions));
+    return true;
+  } catch (e) {
+    if (isQuotaExceeded(e)) {
+      console.warn('localStorage quota exceeded, attempting to sanitize stored data and retry');
+      const sanitized = sanitizeForStorage(auctions);
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitized));
+        return true;
+      } catch (err) {
+        console.error('Failed to store auctions after sanitization', err);
+        // as a last resort, try sessionStorage (smaller lifetime) or skip saving
+        try {
+          sessionStorage.setItem(STORAGE_KEY, JSON.stringify(sanitized));
+          console.warn('Saved auctions to sessionStorage as fallback');
+          return true;
+        } catch (err2) {
+          console.error('Failed to save to sessionStorage fallback', err2);
+          return false;
+        }
+      }
+    }
+    throw e;
+  }
 }
 
 export function getAuctionById(auctionId) {
@@ -108,7 +187,30 @@ function loadMultiAuctions() {
 }
 
 function saveMultiAuctions(auctions) {
-  localStorage.setItem(MULTI_STORAGE_KEY, JSON.stringify(auctions));
+  try {
+    localStorage.setItem(MULTI_STORAGE_KEY, JSON.stringify(auctions));
+    return true;
+  } catch (e) {
+    if (isQuotaExceeded(e)) {
+      console.warn('localStorage quota exceeded for multi auctions, sanitizing and retrying');
+      const sanitized = sanitizeForStorage(auctions);
+      try {
+        localStorage.setItem(MULTI_STORAGE_KEY, JSON.stringify(sanitized));
+        return true;
+      } catch (err) {
+        console.error('Failed to store multi auctions after sanitization', err);
+        try {
+          sessionStorage.setItem(MULTI_STORAGE_KEY, JSON.stringify(sanitized));
+          console.warn('Saved multi auctions to sessionStorage as fallback');
+          return true;
+        } catch (err2) {
+          console.error('Failed to save multi auctions to sessionStorage fallback', err2);
+          return false;
+        }
+      }
+    }
+    throw e;
+  }
 }
 
 export function createMultiItemAuction(auction) {
