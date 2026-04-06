@@ -208,7 +208,8 @@ export default function HostCreateAuctionPage() {
                   <img src={preview} alt={`Preview ${idx + 1}`} style={{
                     width: '100%',
                     height: '150px',
-                    objectFit: 'cover',
+                    objectFit: 'contain',
+                    backgroundColor: '#f3f4f6',
                     borderRadius: '10px',
                     border: '2px solid #e5e7eb'
                   }} />

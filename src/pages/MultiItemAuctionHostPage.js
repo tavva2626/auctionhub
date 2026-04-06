@@ -252,18 +252,28 @@ export default function MultiItemAuctionHostPage() {
             <h2 style={{ marginTop: 0 }}>📦 {currentItem.title}</h2>
 
             {currentItem.imagePreviews?.[0] && (
-              <img
-                src={currentItem.imagePreviews[0]}
-                alt={currentItem.title}
-                style={{
-                  width: '100%',
-                  maxHeight: '400px',
-                  objectFit: 'cover',
-                  borderRadius: '12px',
-                  marginBottom: '1rem',
-                  border: '1px solid #e5e7eb'
-                }}
-              />
+              <div style={{
+                width: '100%',
+                height: '400px',
+                backgroundColor: '#f3f4f6',
+                borderRadius: '12px',
+                overflow: 'hidden',
+                marginBottom: '1rem',
+                border: '1px solid #e5e7eb',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <img
+                  src={currentItem.imagePreviews[0]}
+                  alt={currentItem.title}
+                  style={{
+                    maxWidth: '100%',
+                    maxHeight: '100%',
+                    objectFit: 'contain'
+                  }}
+                />
+              </div>
             )}
 
             <p style={{ color: 'var(--muted)', margin: '0 0 1rem' }}>

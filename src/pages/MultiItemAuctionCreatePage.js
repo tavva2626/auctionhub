@@ -283,7 +283,8 @@ export default function MultiItemAuctionCreatePage() {
                       style={{
                         width: '100%',
                         height: '100px',
-                        objectFit: 'cover',
+                        objectFit: 'contain',
+                        backgroundColor: '#f3f4f6',
                         borderRadius: '8px',
                         border: '2px solid #e5e7eb',
                       }}
@@ -341,7 +342,8 @@ export default function MultiItemAuctionCreatePage() {
                     style={{
                       width: '100%',
                       height: '120px',
-                      objectFit: 'cover',
+                      objectFit: 'contain',
+                      backgroundColor: '#f3f4f6',
                       borderRadius: '8px',
                       marginBottom: '0.75rem'
                     }}

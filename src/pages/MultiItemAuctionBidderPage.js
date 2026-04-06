@@ -217,6 +217,31 @@ export default function MultiItemAuctionBidderPage() {
               </div>
             </div>
 
+            {currentItem.imagePreviews?.[0] && (
+              <div style={{
+                width: '100%',
+                height: '300px',
+                backgroundColor: '#f3f4f6',
+                borderRadius: '12px',
+                overflow: 'hidden',
+                margin: '1rem 0',
+                border: '1px solid #e5e7eb',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <img
+                  src={currentItem.imagePreviews[0]}
+                  alt={currentItem.title}
+                  style={{
+                    maxWidth: '100%',
+                    maxHeight: '100%',
+                    objectFit: 'contain'
+                  }}
+                />
+              </div>
+            )}
+
             <p style={{ color: 'var(--muted)', margin: '0 0 1rem' }}>
               {currentItem.description || 'No description provided'}
             </p>
@@ -390,29 +415,83 @@ export default function MultiItemAuctionBidderPage() {
             )}
           </div>
 
-          {/* Items Navigation */}
-          <div className="card" style={{ marginTop: '1rem', maxHeight: '400px', overflow: 'auto' }}>
-            <h3 style={{ marginTop: 0, marginBottom: '0.75rem' }}>📋 Items</h3>
-            <div style={{ fontSize: '0.9rem' }}>
+          {/* Items Gallery / Catalog */}
+          <div className="card" style={{ marginTop: '1rem', maxHeight: '600px', overflow: 'auto' }}>
+            <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>📦 Auction Catalog ({auction.items.length})</h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '1.5rem' }}>
+              Explore the full details of all items in this auction session.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.5rem' }}>
               {auction.items.map((item, idx) => (
                 <div
                   key={item.id}
                   style={{
-                    padding: '0.75rem',
-                    marginBottom: '0.5rem',
-                    background: idx === currentItemIdx ? 'rgba(59, 130, 246, 0.1)' : '#f9fafb',
-                    borderRadius: '8px',
-                    border: idx === currentItemIdx ? '1px solid #3b82f6' : '1px solid #e5e7eb',
+                    padding: '1rem',
+                    background: idx === currentItemIdx ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.02)',
+                    borderRadius: '16px',
+                    border: idx === currentItemIdx ? '2px solid #3b82f6' : '1px solid #e5e7eb',
+                    transition: 'all 250ms ease',
+                    boxShadow: idx === currentItemIdx ? '0 8px 20px rgba(59, 130, 246, 0.1)' : 'none'
                   }}
                 >
-                  <p style={{ margin: '0 0 0.25rem', fontWeight: idx === currentItemIdx ? 600 : 400, color: 'var(--text)' }}>
-                    {idx + 1}. {item.title}
-                  </p>
-                  <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--muted)' }}>
-                    {item.status === 'ended' && '✅ Complete'}
-                    {item.status === 'started' && '🔴 In Progress'}
-                    {item.status === 'waiting' && '⏳ Waiting'}
-                  </p>
+                  <div style={{ marginBottom: '1rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                      <span style={{ 
+                        fontSize: '0.75rem', 
+                        fontWeight: 700, 
+                        padding: '0.2rem 0.5rem',
+                        borderRadius: '6px',
+                        background: item.status === 'started' ? '#3b82f6' : (item.status === 'ended' ? '#22c55e' : '#e5e7eb'),
+                        color: item.status === 'waiting' ? '#64748b' : '#fff'
+                      }}>
+                        {item.status === 'started' ? '🔴 LIVE NOW' : (item.status === 'ended' ? '✅ COMPLETED' : '⏳ UPCOMING')}
+                      </span>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--muted)', fontWeight: 500 }}>Item {idx + 1}</span>
+                    </div>
+                    <h4 style={{ margin: '0 0 0.5rem', fontSize: '1rem', fontWeight: 700 }}>{item.title}</h4>
+                  </div>
+
+                  {item.imagePreviews?.length > 0 && (
+                    <div style={{
+                      width: '100%',
+                      height: '140px',
+                      borderRadius: '10px',
+                      overflow: 'hidden',
+                      background: '#fff',
+                      marginBottom: '1rem',
+                      border: '1px solid #e5e7eb',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      <img
+                        src={item.imagePreviews[0]}
+                        alt={item.title}
+                        style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+                      />
+                    </div>
+                  )}
+
+                  <div style={{ fontSize: '0.85rem', color: 'var(--text)', marginBottom: '0.75rem' }}>
+                    <p style={{ margin: '0 0 0.5rem', fontWeight: 600 }}>{formatCurrency(item.basePrice)} <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(Base Price)</span></p>
+                    <p style={{ 
+                      margin: 0, 
+                      color: 'var(--muted)', 
+                      display: '-webkit-box', 
+                      WebkitLineClamp: 3, 
+                      WebkitBoxOrient: 'vertical', 
+                      overflow: 'hidden',
+                      lineHeight: '1.4'
+                    }}>
+                      {item.description}
+                    </p>
+                  </div>
+                  
+                  {item.status === 'ended' && getWinnerForItem(item) && (
+                    <div style={{ marginTop: '0.75rem', padding: '0.5rem', background: 'rgba(34, 197, 94, 0.1)', borderRadius: '8px', fontSize: '0.8rem' }}>
+                      🏆 Won by: <strong>{getWinnerForItem(item).bidder.name}</strong> at {formatCurrency(getWinnerForItem(item).bid)}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

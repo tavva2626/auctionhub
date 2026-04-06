@@ -207,6 +207,31 @@ export default function HostAuctionPage() {
           )}
         </div>
 
+        {auction.imagePreviews?.[0] && (
+          <div style={{
+            width: '100%',
+            height: '300px',
+            backgroundColor: '#f3f4f6',
+            borderRadius: '12px',
+            overflow: 'hidden',
+            margin: '1.5rem 0',
+            border: '1px solid #e5e7eb',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <img
+              src={auction.imagePreviews[0]}
+              alt={auction.title}
+              style={{
+                maxWidth: '100%',
+                maxHeight: '100%',
+                objectFit: 'contain'
+              }}
+            />
+          </div>
+        )}
+
         <h3>Description</h3>
         <p>{auction.description || 'No description provided.'}</p>
 

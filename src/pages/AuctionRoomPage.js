@@ -196,9 +196,65 @@ export default function AuctionRoomPage() {
           </div>
         </div>
 
-        <div className="auction-chat">
+        {auction.imagePreviews?.length > 0 && (
+          <div style={{ marginBottom: '2rem' }}>
+            <div style={{
+              width: '100%',
+              height: '400px',
+              backgroundColor: '#f3f4f6',
+              borderRadius: '16px',
+              overflow: 'hidden',
+              marginBottom: '1rem',
+              border: '1px solid #e5e7eb',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <img
+                src={auction.imagePreviews[0]}
+                alt={auction.title}
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '100%',
+                  objectFit: 'contain'
+                }}
+              />
+            </div>
+            {auction.imagePreviews.length > 1 && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))', gap: '0.75rem' }}>
+                {auction.imagePreviews.map((p, i) => (
+                  <div key={i} style={{ 
+                    height: '80px', 
+                    borderRadius: '8px', 
+                    overflow: 'hidden', 
+                    border: i === 0 ? '2px solid #3b82f6' : '1px solid #e5e7eb',
+                    cursor: 'pointer',
+                    background: '#fff'
+                  }}>
+                    <img src={p} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="auction-details">
           <h3>Description</h3>
-          <p>{auction.description}</p>
+          <p style={{ lineHeight: '1.6', color: 'var(--text)', marginBottom: '1.5rem' }}>{auction.description}</p>
+          
+          {auction.history && (
+            <div style={{ 
+              padding: '1rem', 
+              background: 'rgba(59, 130, 246, 0.03)', 
+              borderRadius: '10px', 
+              borderLeft: '4px solid #3b82f6',
+              marginTop: '1.5rem'
+            }}>
+              <h4 style={{ margin: '0 0 0.5rem', color: '#3b82f6' }}>📜 Item Provenance & History</h4>
+              <p style={{ margin: 0, fontSize: '0.95rem', fontStyle: 'italic' }}>{auction.history}</p>
+            </div>
+          )}
         </div>
 
         {!canBid && auction.status === 'waiting' && (
