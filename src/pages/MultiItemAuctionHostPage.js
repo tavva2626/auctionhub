@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { usePageTitle } from '../hooks/usePageTitle';
 import NetworkAccessInfo from '../components/NetworkAccessInfo';
 import { getNetworkURL } from '../utils/networkURL';
+import * as XLSX from 'xlsx';
 
 export default function MultiItemAuctionHostPage() {
   usePageTitle('Host - Multi-Item Auction');
@@ -15,7 +16,7 @@ export default function MultiItemAuctionHostPage() {
   const { user } = useAuth();
   const [auction, setAuction] = useState(null);
   const [now, setNow] = useState(Date.now());
-  const [timerSeconds, setTimerSeconds] = useState('60');
+  const [timerMinutes, setTimerMinutes] = useState('5');
   const [showWinnerAlert, setShowWinnerAlert] = useState(false);
   const [winnerMessage, setWinnerMessage] = useState('');
   const [copyFeedback, setCopyFeedback] = useState(false);
@@ -88,10 +89,10 @@ export default function MultiItemAuctionHostPage() {
 
   const handleStartTimer = async () => {
     if (!currentItem || !auction) return;
-    const seconds = Number(timerSeconds) || 60;
-    if (seconds <= 0) return;
+    const minutes = Number(timerMinutes) || 5;
+    if (minutes <= 0) return;
 
-    const timerEnd = Date.now() + seconds * 1000;
+    const timerEnd = Date.now() + minutes * 60 * 1000;
     const items = (auction.items || []).map((item) => {
       if (item.id !== currentItem.id) return item;
       return { ...item, status: 'started', timerEnd };
@@ -109,7 +110,7 @@ export default function MultiItemAuctionHostPage() {
     if (currentItemIdx + 1 < auction.items.length) {
       await updateMultiItemAuctionRemote(auctionId, { currentItemIndex: currentItemIdx + 1 });
       setShowWinnerAlert(false);
-      setTimerSeconds('60');
+      setTimerMinutes('5');
     }
   };
 
@@ -123,36 +124,39 @@ export default function MultiItemAuctionHostPage() {
     try {
       const history = await getAuctionBidHistory(auction.id, true);
       
-      const headers = ["Timestamp", "Event", "Item", "Bidder Name", "Value", "Bidder ID"];
-      const rows = history.map(event => {
+      // Create a new workbook
+      const wb = XLSX.utils.book_new();
+
+      // Group events by item
+      const itemGroups = {};
+      history.forEach(event => {
+        const title = event.itemTitle || 'Global Events';
+        if (!itemGroups[title]) itemGroups[title] = [];
+        
         const time = event.time?.seconds 
           ? new Date(event.time.seconds * 1000).toLocaleString() 
           : new Date().toLocaleString();
-        
-        return [
-          `"${time}"`,
-          `"${(event.type || 'bid').toUpperCase()}"`,
-          `"${(event.itemTitle || 'Global').replace(/"/g, '""')}"`,
-          `"${(event.bidderName || 'Unknown').replace(/"/g, '""')}"`,
-          event.amount || 0,
-          `"${event.bidderId || ''}"`
-        ];
+
+        itemGroups[title].push({
+          "Timestamp": time,
+          "Event": (event.type || 'bid').toUpperCase(),
+          "Bidder Name": event.bidderName || 'Unknown',
+          "Value": event.amount || 0,
+          "Bidder ID": event.bidderId || ''
+        });
       });
 
-      const csvContent = [
-        headers.join(","),
-        ...rows.map(row => row.join(","))
-      ].join("\n");
+      // Add a sheet for each group
+      Object.keys(itemGroups).forEach(title => {
+        // Sheet names must be <= 31 chars
+        const safeTitle = title.substring(0, 31).replace(/[\\/?*[\]]/g, '_');
+        const ws = XLSX.utils.json_to_sheet(itemGroups[title]);
+        XLSX.utils.book_append_sheet(wb, ws, safeTitle);
+      });
 
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `multi-auction-${auction.id}-audit-log.csv`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      // Generate Excel file and trigger download
+      XLSX.writeFile(wb, `multi-auction-${auction.id}-audit-log.xlsx`);
+
     } catch (err) {
       alert("Failed to export: " + err.message);
     } finally {
@@ -304,11 +308,11 @@ export default function MultiItemAuctionHostPage() {
                 }}>
                   <input
                     type="number"
-                    min="5"
-                    max="3600"
-                    value={timerSeconds}
-                    onChange={(e) => setTimerSeconds(e.target.value)}
-                    placeholder="60"
+                    min="1"
+                    max="1440"
+                    value={timerMinutes}
+                    onChange={(e) => setTimerMinutes(e.target.value)}
+                    placeholder="5"
                     style={{
                       padding: '0.75rem',
                       borderRadius: '10px',
@@ -326,7 +330,7 @@ export default function MultiItemAuctionHostPage() {
                   </button>
                 </div>
                 <p style={{ color: 'var(--muted)', fontSize: '0.9rem', margin: 0 }}>
-                  ℹ️ Enter seconds (5-3600) for how long bidding will last
+                  ℹ️ Enter minutes for how long bidding will last
                 </p>
               </div>
             )}
@@ -510,7 +514,7 @@ export default function MultiItemAuctionHostPage() {
             {auction.status === 'ended' && (
               <div style={{ marginTop: '1rem' }}>
                 <button onClick={handleExportData} disabled={isExporting} style={{ width: '100%', padding: '0.85rem', background: '#10b981', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 600 }}>
-                  {isExporting ? '⌛ Processing CSV...' : '⬇️ Download Audit Log (CSV)'}
+                  {isExporting ? '⌛ Processing Excel...' : '⬇️ Download Audit Log (Excel)'}
                 </button>
               </div>
             )}

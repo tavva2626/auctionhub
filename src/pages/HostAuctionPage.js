@@ -8,6 +8,7 @@ import { usePageTitle } from '../hooks/usePageTitle';
 import ModalDialog from '../components/ModalDialog';
 import NetworkAccessInfo from '../components/NetworkAccessInfo';
 import { getNetworkURL } from '../utils/networkURL';
+import * as XLSX from 'xlsx';
 
 function formatTimeRemaining(ms) {
   if (ms <= 0) return '00:00';
@@ -98,13 +99,13 @@ export default function HostAuctionPage() {
     setShowStartModal(true);
   };
 
-  const handleStartConfirm = async (seconds) => {
-    const numSeconds = Number(seconds) || 60;
-    if (!numSeconds || numSeconds <= 0) {
+  const handleStartConfirm = async (minutes) => {
+    const numMinutes = Number(minutes) || 5;
+    if (numMinutes <= 0) {
       setShowStartModal(false);
       return;
     }
-    const timerEnd = Date.now() + numSeconds * 1000;
+    const timerEnd = Date.now() + numMinutes * 60 * 1000;
     await updateAuctionRemote(auction.id, {
       status: 'started',
       timerEnd,
@@ -133,35 +134,25 @@ export default function HostAuctionPage() {
     try {
       const history = await getAuctionBidHistory(auction.id);
       
-      const headers = ["Timestamp", "Event Type", "Bidder Name", "Amount", "Bidder ID"];
       const rows = history.map(event => {
         const time = event.time?.seconds 
           ? new Date(event.time.seconds * 1000).toLocaleString() 
           : new Date().toLocaleString();
         
-        return [
-          `"${time}"`,
-          `"${(event.type || 'bid').toUpperCase()}"`,
-          `"${(event.bidderName || 'Unknown').replace(/"/g, '""')}"`,
-          event.amount || 0,
-          `"${event.bidderId || ''}"`
-        ];
+        return {
+          "Timestamp": time,
+          "Event Type": (event.type || 'bid').toUpperCase(),
+          "Bidder Name": event.bidderName || 'Unknown',
+          "Amount": event.amount || 0,
+          "Bidder ID": event.bidderId || ''
+        };
       });
 
-      const csvContent = [
-        headers.join(","),
-        ...rows.map(row => row.join(","))
-      ].join("\n");
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Audit Log");
+      XLSX.writeFile(wb, `auction-${auction.id}-audit-log.xlsx`);
 
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `auction-${auction.id}-audit-log.csv`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
     } catch (err) {
       alert("Failed to export data: " + err.message);
     } finally {
@@ -263,7 +254,7 @@ export default function HostAuctionPage() {
               disabled={isExporting}
               style={{ background: '#10b981', border: 'none' }}
             >
-              {isExporting ? '⌛ Processing...' : '⬇️ Download Point-to-Point CSV'}
+              {isExporting ? '⌛ Processing...' : '⬇️ Download Audit Log (Excel)'}
             </button>
           )}
           <button className="secondary" onClick={handleClear}>
@@ -330,9 +321,9 @@ export default function HostAuctionPage() {
       <ModalDialog
         isOpen={showStartModal}
         title="Start Auction"
-        message="How long should the auction run? (in seconds)"
+        message="How long should the auction run? (in minutes)"
         type="prompt"
-        defaultValue="60"
+        defaultValue="5"
         onConfirm={handleStartConfirm}
         onCancel={() => setShowStartModal(false)}
         confirmText="Start"
