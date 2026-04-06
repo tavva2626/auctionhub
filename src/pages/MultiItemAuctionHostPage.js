@@ -251,7 +251,7 @@ export default function MultiItemAuctionHostPage() {
           <div className="card">
             <h2 style={{ marginTop: 0 }}>📦 {currentItem.title}</h2>
 
-            {currentItem.imagePreviews?.[0] && (
+            {currentItem.images?.[0] && (
               <div style={{
                 width: '100%',
                 height: '400px',
@@ -265,7 +265,7 @@ export default function MultiItemAuctionHostPage() {
                 justifyContent: 'center'
               }}>
                 <img
-                  src={currentItem.imagePreviews[0]}
+                  src={currentItem.images[0]}
                   alt={currentItem.title}
                   style={{
                     maxWidth: '100%',

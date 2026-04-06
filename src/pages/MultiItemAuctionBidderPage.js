@@ -217,7 +217,7 @@ export default function MultiItemAuctionBidderPage() {
               </div>
             </div>
 
-            {currentItem.imagePreviews?.[0] && (
+            {currentItem.images?.[0] && (
               <div style={{
                 width: '100%',
                 height: '300px',
@@ -231,7 +231,7 @@ export default function MultiItemAuctionBidderPage() {
                 justifyContent: 'center'
               }}>
                 <img
-                  src={currentItem.imagePreviews[0]}
+                  src={currentItem.images[0]}
                   alt={currentItem.title}
                   style={{
                     maxWidth: '100%',
@@ -451,7 +451,7 @@ export default function MultiItemAuctionBidderPage() {
                     <h4 style={{ margin: '0 0 0.5rem', fontSize: '1rem', fontWeight: 700 }}>{item.title}</h4>
                   </div>
 
-                  {item.imagePreviews?.length > 0 && (
+                  {item.images?.length > 0 && (
                     <div style={{
                       width: '100%',
                       height: '140px',
@@ -465,7 +465,7 @@ export default function MultiItemAuctionBidderPage() {
                       justifyContent: 'center'
                     }}>
                       <img
-                        src={item.imagePreviews[0]}
+                        src={item.images[0]}
                         alt={item.title}
                         style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
                       />

@@ -207,7 +207,7 @@ export default function HostAuctionPage() {
           )}
         </div>
 
-        {auction.imagePreviews?.[0] && (
+        {auction.images?.[0] && (
           <div style={{
             width: '100%',
             height: '300px',
@@ -221,7 +221,7 @@ export default function HostAuctionPage() {
             justifyContent: 'center'
           }}>
             <img
-              src={auction.imagePreviews[0]}
+              src={auction.images[0]}
               alt={auction.title}
               style={{
                 maxWidth: '100%',

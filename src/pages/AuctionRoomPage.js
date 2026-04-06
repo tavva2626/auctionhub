@@ -196,7 +196,7 @@ export default function AuctionRoomPage() {
           </div>
         </div>
 
-        {auction.imagePreviews?.length > 0 && (
+        {auction.images?.length > 0 && (
           <div style={{ marginBottom: '2rem' }}>
             <div style={{
               width: '100%',
@@ -211,7 +211,7 @@ export default function AuctionRoomPage() {
               justifyContent: 'center'
             }}>
               <img
-                src={auction.imagePreviews[0]}
+                src={auction.images[0]}
                 alt={auction.title}
                 style={{
                   maxWidth: '100%',
@@ -220,9 +220,9 @@ export default function AuctionRoomPage() {
                 }}
               />
             </div>
-            {auction.imagePreviews.length > 1 && (
+            {auction.images.length > 1 && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))', gap: '0.75rem' }}>
-                {auction.imagePreviews.map((p, i) => (
+                {auction.images.map((p, i) => (
                   <div key={i} style={{ 
                     height: '80px', 
                     borderRadius: '8px', 
