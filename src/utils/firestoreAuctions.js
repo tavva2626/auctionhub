@@ -17,23 +17,16 @@ import {
 
 export async function createAuctionRemote(auction) {
   const ref = doc(db, 'auctions', auction.id);
-  // Strip large Base64 image payloads to remain under Firestore's 1MB limit.
-  const remoteAuction = { ...auction, images: [], imagePreviews: [] };
-  await setDoc(ref, { ...remoteAuction, createdAt: serverTimestamp() });
+  // We no longer strip images, allowing them to remain for bidders to see.
+  // Note: Base64 strings should be kept small to respect Firestore's 1MB limit.
+  await setDoc(ref, { ...auction, createdAt: serverTimestamp() });
   return { id: auction.id };
 }
 
 export async function createMultiItemAuctionRemote(auction) {
   const ref = doc(db, 'multiAuctions', auction.id);
-  // Strip images from items to respect Firestore 1MB limits
-  const sanitizedItems = auction.items.map(item => ({
-    ...item,
-    images: [],
-    imagePreviews: []
-  }));
-  const remoteAuction = { ...auction, items: sanitizedItems };
-  
-  await setDoc(ref, { ...remoteAuction, createdAt: serverTimestamp() });
+  // Preserving images so bidders can view the item catalog.
+  await setDoc(ref, { ...auction, createdAt: serverTimestamp() });
   return { id: auction.id };
 }
 

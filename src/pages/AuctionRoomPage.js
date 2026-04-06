@@ -184,15 +184,32 @@ export default function AuctionRoomPage() {
 
       <div className="auction-layout-container">
         <section className="card auction-info">
-        <h2>Auction info</h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+          <h2 style={{ margin: 0 }}>📦 Lot 1</h2>
+          <span style={{ 
+            fontSize: '0.8rem', 
+            fontWeight: 700, 
+            padding: '0.3rem 0.8rem',
+            borderRadius: '20px',
+            background: auction.status === 'started' ? '#3b82f6' : (auction.status === 'ended' ? '#22c55e' : '#e5e7eb'),
+            color: auction.status === 'waiting' ? '#64748b' : '#fff'
+          }}>
+            {auction.status === 'started' ? '🔴 LIVE NOW' : (auction.status === 'ended' ? '✅ COMPLETED' : '⏳ UPCOMING')}
+          </span>
+        </div>
+
+        <h3 style={{ margin: '0 0 1.5rem', fontSize: '1.5rem', fontWeight: 800, color: 'var(--text)' }}>
+          {auction.title}
+        </h3>
+
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
-          <div style={{ background: 'rgba(59, 130, 246, 0.05)', padding: '1rem', borderRadius: '10px' }}>
-            <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--muted)' }}>Status</p>
-            <p style={{ margin: 0, fontWeight: 700, textTransform: 'capitalize' }}>{auction.status}</p>
+          <div style={{ background: 'rgba(59, 130, 246, 0.05)', padding: '1rem', borderRadius: '12px', border: '1px solid rgba(59, 130, 246, 0.1)' }}>
+            <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--muted)', fontWeight: 600, textTransform: 'uppercase' }}>Base Price</p>
+            <p style={{ margin: 0, fontWeight: 700, fontSize: '1.2rem', color: 'var(--text)' }}>{formatCurrency(auction.basePrice)}</p>
           </div>
-          <div style={{ background: 'rgba(245, 158, 11, 0.05)', padding: '1rem', borderRadius: '10px' }}>
-            <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--muted)' }}>Highest Bid</p>
-            <p style={{ margin: 0, fontWeight: 700, color: '#f59e0b' }}>{formatCurrency(highestBid)}</p>
+          <div style={{ background: 'rgba(245, 158, 11, 0.05)', padding: '1rem', borderRadius: '12px', border: '1px solid rgba(245, 158, 11, 0.1)' }}>
+            <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--muted)', fontWeight: 600, textTransform: 'uppercase' }}>Current Bid</p>
+            <p style={{ margin: 0, fontWeight: 700, fontSize: '1.2rem', color: '#f59e0b' }}>{formatCurrency(highestBid)}</p>
           </div>
         </div>
 
